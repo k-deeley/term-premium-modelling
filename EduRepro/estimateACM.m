@@ -47,9 +47,11 @@ end
 [VARModel, ~, ~, modelResiduals] = ...
     estimate( VARModel, selectedScores );
 Phi = VARModel.AR{1};
+mu = VARModel.Constant;
 
 % Compute the covariance matrix of the residuals.
 covModelResiduals = VARModel.Covariance;
+%covModelResiduals = cov(modelResiduals);
 
 %************************************************************************************************
 % Step 2: Estimate excess return regressions
@@ -103,7 +105,7 @@ delta1 = deltas(2:end);
 %************************************************************************************************
 % Construct risk-neutral pricing coefficients - equations (25) and (26) in
 % ACM
-q0 = -lambda0;
+q0 = mu - lambda0;
 qx = Phi - lambda1;
 
 % Recursive bond prices - equations (25) and (26) in ACM
@@ -157,5 +159,7 @@ decomposition.yHat = A*ones(1,T) + B*selectedScores';
 decomposition.expected = AP*ones(1,T) + BP*selectedScores';
 decomposition.riskPremium = (AQ-AP)*ones(1,T) + (BQ-BP)*selectedScores';
 decomposition.convexity   = (A-AQ)*ones(1,T);
+decomposition.lambda0 = lambda0;
+decomposition.lambda1 = lambda1;
 
 end
