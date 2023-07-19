@@ -10,9 +10,9 @@ varNames = "Maturity_" + maturities + "_years";
 T = array2timetable( yields, "RowTimes", dates, ...
     "VariableNames", varNames );
 
-%% Remove rows with missing or negative data.
+%% Remove rows with missing  data.
 missingIdx = ismissing( T );
-badRows = any( missingIdx, 2 ) | any( T.Variables < 0, 2 );
+badRows = any( missingIdx, 2 );
 T(badRows, :) = [];
 numObservations = height( T );
 
@@ -71,50 +71,56 @@ VARModel.AR{1}(1, 4) = NaN;
 [VARModel, estimatedStandardErrors, ~, modelResiduals] = ...
     estimate( VARModel, selectedScores );
 Phi = VARModel.AR{1};
+mu = VARModel.Constant;
 
 % Compute the covariance matrix of the residuals.
 covModelResiduals = cov( modelResiduals );
 
 %% Estimate the excess returns.
 
-% Convert yields into prices.
 percent2proportion = 0.01;
-monthly2annual = 1/12;
-conversionFactor = percent2proportion * monthly2annual;
-prices = maturities .* yieldMatrix * conversionFactor;
+
+% Convert yields into prices.
+% We use the formula :
+%   y_t^n = -1/n * p_t^n (1)
+% where 
+%   . y is the cotinuously compounded yield ("log yield")
+%   . p_t^n is the log price of n-year discount bond at time t
+%   . n is maturity (Cochrane and Piazzesi, 2005)
+% No need to divide by 12; our maturities are already in terms of years
+% (unlike the original code).
+logPrices = - maturities .* yieldMatrix * percent2proportion;
 
 % Short-term interest rate. This acts as the instantaneous risk-free rate.
-shortTermInterestRate = yieldMatrix(:, 1) * conversionFactor;
+% We estimate this using the yield of the first month. In turn, we estimate
+% the yield of the first month by taking the first entry in our
+% yieldMatrix, which corresponds to 6 months, and dividing it by 6 to make
+% it monthly.
+% The original code used the 12th month's yield to approximate the first
+% month by dividing by 12.
+sixMonths2firstMonth = 1/6;
+shortTermInterestRate = yieldMatrix(:, 1) * sixMonths2firstMonth * percent2proportion; 
 
-% Compute the excess returns. Here, the rows represent continuous time
+% Compute the excess returns using eq (6) from Adrian, Crump and Moenich, 2013. 
+% Here, the rows represent continuous time
 % (monthly data) and the columns represent discrete time (bond maturity
 % periods).
-%
+% 
 % t - row index (continuous, monthly)
 % n - column index (discrete, annual)
-excessReturns = log( prices(2:end, 1:end-1) ) - ...
-    log( prices(1:end-1, 2:end) ) - shortTermInterestRate(1:end-1);
+excessReturns = logPrices(2:end, 1:end-1) - ...
+    logPrices(1:end-1, 2:end) - shortTermInterestRate(1:end-1);
 numExcessReturns = height( excessReturns );
 
 %% Regress the log excess returns on the factors.
 numExcessReturnSeries = width( excessReturns );
-aCoeffs = zeros( numExcessReturnSeries, 1 );
-bCoeffs = zeros( numExcessReturnSeries, numSeries );
-cCoeffs = zeros( numExcessReturnSeries, numSeries );
-returnPricingErrors = zeros( numExcessReturns, numExcessReturnSeries );
 
-for k = 1 : numExcessReturnSeries
-    designMatrix = [ones( numExcessReturns, 1), modelResiduals, ...
-        selectedScores(2:end, :)];
-    currentExcessReturn = excessReturns(:, k);
-    currentModel = fitlm( designMatrix, currentExcessReturn, ...
-        "Intercept", false );
-    currentModelCoeffs = currentModel.Coefficients.Estimate;
-    aCoeffs(k) = currentModelCoeffs(1); % 1
-    bCoeffs(k, :) = currentModelCoeffs(2:(2+numSeries-1)); % 4
-    cCoeffs(k, :) = currentModelCoeffs((2+numSeries):end); % 4
-    returnPricingErrors(:, k) = currentModel.Residuals.Raw;
-end % for
+designMatrix = [ones(numExcessReturns, 1), modelResiduals, selectedScores(1:end-1,:)];
+modelExcessReturns = excessReturns \ designMatrix;
+aCoeffs = modelExcessReturns(1, :)'; 
+betaCoeffs = modelExcessReturns(2:2 + numComponents -1, :)'; 
+cCoeffs = modelExcessReturns(2 + numComponents:end,:)'; 
+returnPricingErrors = (excessReturns - designMatrix * modelExcessReturns);
 
 % Compute the normalized trace of the covariance matrix of the residuals 
 % from the linear regression models.
@@ -124,20 +130,20 @@ normTrace = trace( returnPricingErrors * returnPricingErrors.' ) / ...
 %% Compute Bstar from equation (13).
 Bstar = zeros( numExcessReturnSeries, numSeries^2 );
 for k = 1 : numExcessReturnSeries
-    Bstar(k, :) = kron( bCoeffs(k, :), bCoeffs(k, :) ).';
+    Bstar(k, :) = kron( betaCoeffs(k, :), betaCoeffs(k, :) ).';
 end % for
 
 %% Compute the market prices of risk (the parameters lambda0 and lambda1).
 % aCoeffs - 9-by-1
-% bCoeffs - 9-by-4
+% betaCoeffs - 9-by-4
 % cCoeffs - 9-by-4
 % Bstar - 9-by-16
 % covModelResiduals - 4-by-4
 % lambda0 - 4-by-1
 % lambda1 - 4-by-4
-lambda0 = bCoeffs \ (aCoeffs + 0.5 * (Bstar * covModelResiduals(:) + ...
+lambda0 = betaCoeffs \ (aCoeffs + 0.5 * (Bstar * covModelResiduals(:) + ...
     normTrace * ones( numExcessReturnSeries, 1 )));
-lambda1 = bCoeffs \ cCoeffs;
+lambda1 = betaCoeffs \ cCoeffs;
 
 %% Model the short rates as a linear function of the factors.
 shortRateModel = fitlm( selectedScores, shortTermInterestRate );
