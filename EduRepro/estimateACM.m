@@ -1,6 +1,6 @@
-function [decomposition] = estimateACM(yields, stir, maturities, numFactors, nvp )
+function [decomposition, lambda0, lambda1, delta0, delta1] = estimateACM(yields, stir, maturities, numFactors, nvp )
 
-arguments
+arguments (Input)
     yields     (:,:) timetable            % Timetable with yields in %
     stir       (:,1) timetable            % Time table with the short term interest rate in %
     maturities (1,:) double               % Maturities (in months)
@@ -8,6 +8,14 @@ arguments
     nvp.pcMats (1,:) double = maturities  % Maturities to compute the principal components (in months)
     nvp.rxMats (1,:) double = maturities  % Maturities to compute the excessReturns (in months)
     nvp.model  (1,1) string = "meanzero"  % Type of var model
+end
+
+arguments (Output)
+    decomposition (1,1) struct
+    lambda0 (:,1) double
+    lambda1 (:,:) double
+    delta0 (:,:) double
+    delta1 (:,:) double
 end
 
 pcMats = nvp.pcMats;
@@ -51,7 +59,6 @@ mu = VARModel.Constant;
 
 % Compute the covariance matrix of the residuals.
 covModelResiduals = VARModel.Covariance;
-%covModelResiduals = cov(modelResiduals);
 
 %************************************************************************************************
 % Step 2: Estimate excess return regressions
@@ -159,7 +166,5 @@ decomposition.yHat = A*ones(1,T) + B*selectedScores';
 decomposition.expected = AP*ones(1,T) + BP*selectedScores';
 decomposition.riskPremium = (AQ-AP)*ones(1,T) + (BQ-BP)*selectedScores';
 decomposition.convexity   = (A-AQ)*ones(1,T);
-decomposition.lambda0 = lambda0;
-decomposition.lambda1 = lambda1;
 
 end
