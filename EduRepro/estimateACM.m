@@ -1,4 +1,4 @@
-function [decomposition, lambda0, lambda1, delta0, delta1] = estimateACM(yields, stir, maturities, numFactors, nvp )
+function [decomposition, lambda0, lambda1, delta0, delta1, tsquared] = estimateACM(yields, stir, maturities, numFactors, nvp )
 
 arguments (Input)
     yields     (:,:) timetable            % Timetable with yields in %
@@ -14,8 +14,9 @@ arguments (Output)
     decomposition (1,1) struct
     lambda0 (:,1) double
     lambda1 (:,:) double
-    delta0 (:,:) double
-    delta1 (:,:) double
+    delta0 (1,1) double
+    delta1 (:,1) double
+    tsquared double
 end
 
 pcMats = nvp.pcMats;
@@ -26,7 +27,7 @@ shortTermInterestRate = stir{:,:}/100;
 
 [T, ny] = size(yieldMatrix);  
 
-[~, scores, ~] = pca( yieldMatrix(:,pcMats) );
+[~, scores, ~, tsquared] = pca( yieldMatrix(:,pcMats) );
 
 % Extract the first "numComponents" principal components.
 selectedScores = scores(:, 1:numFactors);
@@ -116,55 +117,56 @@ q0 = mu - lambda0;
 qx = Phi - lambda1;
 
 % Recursive bond prices - equations (25) and (26) in ACM
-aFull = nan(ny,1);
-bFull = nan(ny,numFactors);
+aFull = nan(1, ny);
+bFull = nan(numFactors, ny);
 
 % Bond prices under P with sigma = 0
-aFull_P = nan(ny,1);
-bFull_P = nan(ny,numFactors);
+aFull_P = nan(1,ny);
+bFull_P = nan(numFactors,ny);
 
 % Bond prices under Q with sigma = 0
-aFull_Q = nan(ny,1);
-bFull_Q = nan(ny,numFactors);
+aFull_Q = nan(1,ny);
+bFull_Q = nan(numFactors,ny);
 
 for n = 1:ny
     if n == 1
-        aFull(n,1) = -delta0;
-        bFull(n,:) = -delta1';
+        aFull(1,n) = -delta0;
+        bFull(:,n) = -delta1;
 
-        aFull_P(n,1) = -delta0;
-        bFull_P(n,:) = -delta1';
+        aFull_P(1,n) = -delta0;
+        bFull_P(:,n) = -delta1;
 
-        aFull_Q(n,1) = -delta0;
-        bFull_Q(n,:) = -delta1';
+        aFull_Q(1,n) = -delta0;
+        bFull_Q(:,n) = -delta1;
     else
-        aFull(n,1) = aFull(n-1,1) + bFull(n-1,:)*q0 + 0.5*(bFull(n-1,:)*covModelResiduals*bFull(n-1,:)' + normTrace) - delta0;
-        bFull(n,:) = -delta1' + bFull(n-1,:)*qx;
+        aFull(1,n) = aFull(1,n-1) + dot(bFull(:,n-1),q0) + 0.5*(bFull(:,n-1)'*covModelResiduals*bFull(:,n-1) + normTrace) - delta0;
+        bFull(:,n) = -delta1 + qx'*bFull(:,n-1);
 
-        aFull_P(n,1) = aFull_P(n-1,1) - delta0;
-        bFull_P(n,:) = -delta1' + bFull_P(n-1,:)*Phi;
+        aFull_P(1,n) = aFull_P(1,n-1) - delta0;
+        bFull_P(:,n) = -delta1 + Phi'*bFull_P(:,n-1);
 
-        aFull_Q(n,1) = aFull_Q(n-1,1) - delta0 + bFull_Q(n-1,:)*q0;
-        bFull_Q(n,:) = -delta1' + bFull_Q(n-1,:)*qx;
+        aFull_Q(1,n) = aFull_Q(1,n-1) - delta0 + q0'*bFull_Q(:,n-1);
+        bFull_Q(:,n) = -delta1 + qx'*bFull_Q(:,n-1);
     end
 end
 
 % Convert to yields. This is the log price, to convert to yield we need to
 % divide by -n, in years which is -1/((1:120)/12)*100
-A = -1200*aFull./(1:ny)';
-B = -1200*bFull./repmat((1:ny)',1,numFactors);
+%TODO: Divide each column by (1:ny)
+A = -1200*aFull./(1:ny);
+B = -1200*bFull./repmat((1:ny),numFactors,1);
 
-AP = -1200*aFull_P./(1:ny)';
-BP = -1200*bFull_P./repmat((1:ny)',1,numFactors);
+AP = -1200*aFull_P./(1:ny);
+BP = -1200*bFull_P./repmat((1:ny),numFactors,1);
 
-AQ = -1200*aFull_Q./(1:ny)';
-BQ = -1200*bFull_Q./repmat((1:ny)',1,numFactors);
+AQ = -1200*aFull_Q./(1:ny);
+BQ = -1200*bFull_Q./repmat((1:ny),numFactors,1);
 
 % Fitted yields
-decomposition.yHat = A*ones(1,T) + B*selectedScores';
+decomposition.yHat = (ones(T,1) * A + selectedScores * B);
 % yHat = ones(T,1)*A' + selectedScores*B';
-decomposition.expected = AP*ones(1,T) + BP*selectedScores';
-decomposition.riskPremium = (AQ-AP)*ones(1,T) + (BQ-BP)*selectedScores';
-decomposition.convexity   = (A-AQ)*ones(1,T);
+decomposition.expected = (ones(T,1) * AP + selectedScores*BP);
+decomposition.riskPremium = (ones(T,1) * (AQ-AP) + selectedScores*(BQ-BP));
+decomposition.convexity   = (ones(T,1) * (A-AQ));
 
 end
