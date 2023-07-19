@@ -1,3 +1,0 @@
-MyTestJob:
-    script:
-        - mw -using BR2023ad matlab -r "disp(magic(5))"
