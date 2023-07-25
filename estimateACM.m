@@ -1,9 +1,10 @@
 function decomposition = estimateACM( yields, maturities, numFactors )
+%ESTIMATEACM Estimate the term premium using the ACM model.
 
 arguments
     % Matrix of yields (%).
     yields(:, :) double    
-    % Vector of maturities (months).
+    % Vector of maturities (years).
     maturities(1, :) double
     % Number of factors (principal components) to use in the model.
     numFactors(1, 1) double = 3
@@ -21,16 +22,8 @@ yields = yields * percent2proportion;
 monthsPerYear = 12;
 shortTermInterestRate = yields(:, 1) / (maturities(1) * monthsPerYear);
 
-% Compute the principal components of the yields. The principal component 
-% factors are interpreted as follows.
-%
-% First factor:
-%
-% * The expected returns of all maturities move together, so a single
-% variable x_t (first factor) can describe the time-variation of the
-% expected returns.
-%
-% The remaining factors are, respectively:
+% Compute the principal components of the yields. The first three principal
+% component factors are interpreted as follows.
 %
 % * Level
 % * Slope
@@ -39,7 +32,7 @@ shortTermInterestRate = yields(:, 1) / (maturities(1) * monthsPerYear);
 [yieldsNorm, yieldsMean, yieldsStd] = zscore( yields );
 [~, factors] = pca( yieldsNorm, "Centered", false );
 
-% Extract the first "numComponents" principal components.
+% Extract the first numFactors principal components.
 selectedFactors = factors(:, 1:numFactors);
 
 % Write down the number of observations (times) and the number of
@@ -49,7 +42,7 @@ selectedFactors = factors(:, 1:numFactors);
 %% Step 1: Estimate the P dynamics using a VAR.
 
 % Create and estimate a VAR model for the yield principal components
-% (qquation (1) in ACM).
+% (equation (1) in ACM).
 numLags = 1;
 VARModel = varm( numFactors, numLags );
 VARModel.SeriesNames = "PCA_Factor_" + (1:numFactors);
@@ -57,8 +50,8 @@ VARModel.Description = "Vector autoregressive zero-mean " + ...
     "model of order 1 for the yield principal components";
 
 % Set the model constants to be zero.
-mu = 0;
-VARModel.Constant = mu * ones( numFactors, 1 );
+mu = zeros( numFactors, 1 );
+VARModel.Constant = mu;
 
 % Estimate the model.
 [VARModel, ~, ~, modelResiduals] = estimate( VARModel, selectedFactors );
@@ -145,7 +138,7 @@ bFull_P = NaN( numFactors, numMaturities );
 aFull_Q = NaN( 1, numMaturities );
 bFull_Q = NaN( numFactors, numMaturities );
 
-for n = 1 : numMaturities    
+for n = 1 : max( maturities )
     if n == 1        
         aFull(1, n) = -delta0;
         bFull(:, n) = -delta1;
@@ -183,7 +176,7 @@ decomposition.MarketPriceOfRisk = lambda_t;
 onesNumTimes = ones( numTimes, 1 );
 decomposition.Fitted = onesNumTimes * A + rebasedFactors * B;
 decomposition.Expected = onesNumTimes * AP + rebasedFactors * BP;
-decomposition.TermPremium = onesNumTimes * (AQ-AP) + rebasedFactors * (BQ-BP);
-decomposition.Convexity = onesNumTimes * (A-AQ);
+decomposition.TermPremium = onesNumTimes * (A-AP) + rebasedFactors * (B-BP);
+%decomposition.Convexity = onesNumTimes * (A-AQ);
 
 end
