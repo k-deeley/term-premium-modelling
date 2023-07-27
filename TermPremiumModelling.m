@@ -27,11 +27,13 @@ ylabel('(%)')
 title('10-year decomposition')
 
 %% Import the zero coupon yields.
-filename = "ZeroCouponYieldsMonthly.xlsx";
-maturities = readmatrix( filename, "Range", "B1:K1" );
+filename = "ZeroCouponYieldsMonthlyWithBankRate.xlsx";
+%% Select maturities up to 10 years
+maturities = readmatrix( filename, "Range", "B1:H1" );
 dates = datetime( readmatrix( filename, "Range", "A2:A330" ), ...
     "ConvertFrom", "excel" );
-yields = readmatrix( filename, "Range", "B2:K330" );
+bankRates = readmatrix(filename, "Range", "N2:N330");
+yields = readmatrix( filename, "Range", "B2:H330" );
 varNames = "Maturity_" + maturities + "_years";
 yields = array2timetable( yields, "RowTimes", dates, ...
     "VariableNames", varNames );
@@ -39,6 +41,7 @@ yields = array2timetable( yields, "RowTimes", dates, ...
 %% Select data from 1998 onwards to avoid missing values.
 from1998Idx = yields.Time >= datetime( 2010, 1, 1 );
 yields = yields(from1998Idx, :);
+bankRates = bankRates(from1998Idx);
 
 %% Interpolate the remaining short-term rates.
 yields = fillmissing( yields, "linear" );
@@ -87,12 +90,56 @@ plot( decomposition.Convexity.Time, ...
 legend
 
 
+%% Interpolate yields for continuous range n = 1 to 120 months
+% Input data is for years 0.5, 1, 2, 3, 5, 7 10
+maxMaturity = 10 * 12;
+maturitiesRequired = 1:maxMaturity;
+
+% Bank rate is used for n=0
+maturitiesAvailable = [0, maturities*12];
+yieldsAvailable = array2table([bankRates yields.Variables]); % Convert to table so we can use rowfun
+interpolateRow = @(rowyields) interp1(maturitiesAvailable, rowyields, maturitiesRequired);
+% Easiest way I could find to stack the outputs of the rowfun is to ask for
+% cells and then convert to a matrix; would welcome a better approach!
+yieldsAll = cell2mat(rowfun(interpolateRow, yieldsAvailable, 'SeparateInputs', false, "OutputFormat", "cell"));
+yieldsAll = array2timetable(yieldsAll, "RowTimes", yields.Time);
+
+% Check that our interpolated values make sense
+% Choose 12 random dates to plot
+idxs = randi(height(yieldsAvailable), [1,12]);
+figure
+ax = axes;
+plot(ax,maturitiesRequired, yieldsAll{idxs,:}, "DisplayName","Interpolated");
+hold on;
+plot(ax,maturitiesAvailable, yieldsAvailable{idxs,:}, 'O', "LineStyle", "none", "DisplayName","Observed");
+ax.ColorOrder = jet( 12 );
 
 
+%% Fit the ACM model, use the same stir as before
+%stir = yieldsAll(:,1); % This gives quite poor results; approximating with 6
+%month yields/6 as before works much better.
+decomposition = fitACM( yieldsAll, stir, maturitiesRequired );
 
+%% Visualize the results.
+maturityYear = 5;
+maturityIdx = yr2mth *maturityYear;
 
-
-
+figure
+plot( yieldsAll.Time, yieldsAll{:, maturityIdx}, ...
+    "DisplayName", "Observed Yield" )
+ hold on
+ plot( decomposition.Fitted.Time, decomposition.Fitted{:, maturityIdx}, ...
+     "DisplayName", "Fitted" )
+ plot( decomposition.RiskNeutralExpected.Time, ...
+     decomposition.RiskNeutralExpected{:, maturityIdx}, ...
+     "DisplayName", "Risk Neutral Expected" )
+ plot( decomposition.TermPremium.Time, ...
+     decomposition.TermPremium{:, maturityIdx}, ...
+     "DisplayName", "Term Premium" )
+plot( decomposition.Convexity.Time, ...
+    decomposition.Convexity{:, maturityIdx}, ...
+    "DisplayName", "Convexity" )
+legend
 
 
 
