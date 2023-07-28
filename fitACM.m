@@ -19,7 +19,7 @@ function decomposition = fitACM( yields, shortTermInterestRate, maturities )
 arguments
     yields(:, :) timetable
     shortTermInterestRate(:, 1) timetable
-    maturities(1, :) double {mustBePositive, mustBeInteger}
+    maturities(1, :) double {mustBePositive, mustBeInteger}    
 end % arguments
 
 %% Prepare and validate the input data.
@@ -130,7 +130,7 @@ sigma2 = trace( E * E.' ) / (N * T);
 %% Estimate the price of risk parameters via cross-sectional regression.
 % Construct the B* matrix (defined below equation (13) in [1]).
 Bstar = zeros( N, K^2 );
-for n = 1 : N
+for n = 1 : N % For each maturity...
     betan = beta(n, :); % 1-by-K
     betanOuterProduct = betan.' * betan; % K-by-K
     % Flatten the outer product into a 1-by-K^2 row vector.
@@ -164,47 +164,47 @@ qx = Phi - lambda1; % A K-by-K matrix.
 % Preallocate space for the outputs. We evaluate three versions of the "A"
 % and "B" matrices according to equations (25) and (26) in [1].
 %
-% * A and B correspond directly to equations (25) and (26).
-% * AP and BP are the risk-neutral versions of equations (25) and (26), in
+% * AP and BP correspond directly to equations (25) and (26).
+% * AQ and BQ are the risk-neutral versions of equations (25) and (26), in
 % which we impose lambda0 = 0 and lambda1 = 0. Recall that lambda0 and
 % lambda1 are the risk parameters, so setting these to zero implies that we
 % are risk-neutral. The term premium is calculated as the difference
 % between the risk-neutral yield and the model-implied fitted yield.
-% * AQ and BQ are the convexity-neutral versions of equations (25) and
+% * AR and BR are the convexity-neutral versions of equations (25) and
 % (26), in the sense that we set the convexity term in equation (25)
 % to 0 by imposing Sigma = 0 and sigma2 = 0. The convexity is calculated as
 % the difference between the convexity-neutral yield and the model-implied
 % fitted yield.
-A = NaN( 1, N );
-B = NaN( K, N );
 AP = NaN( 1, N );
 BP = NaN( K, N );
 AQ = NaN( 1, N );
 BQ = NaN( K, N );
+AR = NaN( 1, N );
+BR = NaN( K, N );
 
-for n = 1 : N    
+for n = 1 : N % For each bond maturity period...
     if n == 1
         % Initialize.
-        A(1, n) = -delta0;
-        B(:, n) = -delta1;
         AP(1, n) = -delta0;
         BP(:, n) = -delta1;
         AQ(1, n) = -delta0;
         BQ(:, n) = -delta1;
+        AR(1, n) = -delta0;
+        BR(:, n) = -delta1;
     else
         % Update recursively.
         % A and B.
-        A(1, n) = A(1, n-1) + q0.' * B(:, n-1) + ...
-            0.5 * (B(:, n-1).' * Sigma * B(:, n-1) + sigma2) - delta0;
-        B(:, n) = qx.' * B(:, n-1) - delta1;
+        AP(1, n) = AP(1, n-1) + q0.' * BP(:, n-1) + ...
+            0.5 * (BP(:, n-1).' * Sigma * BP(:, n-1) + sigma2) - delta0;
+        BP(:, n) = qx.' * BP(:, n-1) - delta1;
         % AP and BP (setting lambda0 = 0 and lambda1 = 0). If lambda0 = 0
         % then q0 = mu, and if lambda1 = 0 then qx = Phi.
-        AP(1, n) = AP(1, n-1) + mu.' * BP(:, n-1) + ...
-            0.5 * (BP(:, n-1).' * Sigma * BP(:, n-1) + sigma2) - delta0;
-        BP(:, n) = Phi.' * BP(:, n-1) - delta1;
+        AQ(1, n) = AQ(1, n-1) + mu.' * BQ(:, n-1) + ...
+            0.5 * (BQ(:, n-1).' * Sigma * BQ(:, n-1) + sigma2) - delta0;
+        BQ(:, n) = Phi.' * BQ(:, n-1) - delta1;
         % AQ and BQ (setting Sigma = 0 and sigma2 = 0).
-        AQ(1, n) = AQ(1, n-1) + q0.' * BQ(:, n-1) - delta0;
-        BQ(:, n) = qx.' * BQ(:, n-1) - delta1;
+        AR(1, n) = AR(1, n-1) + q0.' * BR(:, n-1) - delta0;
+        BR(:, n) = qx.' * BR(:, n-1) - delta1;
     end % if
 end % for  
         
@@ -212,12 +212,12 @@ end % for
 % This implements the inverse of the yield to price conversion performed
 % above.
 price2yield = @( lnP ) (-1) * conversionFactor * lnP ./ maturities;
-A = price2yield( A );
-B = price2yield( B );
 AP = price2yield( AP );
 BP = price2yield( BP );
 AQ = price2yield( AQ );
 BQ = price2yield( BQ );
+AR = price2yield( AR );
+BR = price2yield( BR );
 
 %% Prepare the outputs.
 % Define a helper function to convert from a matrix to a timetable.
@@ -232,18 +232,18 @@ decomposition.MarketPriceOfRisk = array2timetable( lambda_t, ...
     "VariableNames", "PC" + (1:K) );
 % The fitted yields (equation (21) of [1]).
 onesNumTimes = ones( T, 1 );
-fitted = onesNumTimes * A + X * B; % A T-by-N matrix.
+fitted = onesNumTimes * AP + X * BP; % A T-by-N matrix.
 decomposition.Fitted = ts2tt( fitted );
 % The (risk-neutral) expected values.
-riskNeutral = onesNumTimes * AP + X * BP; % A T-by-N matrix.
+riskNeutral = onesNumTimes * AQ + X * BQ; % A T-by-N matrix.
 decomposition.RiskNeutralExpected = ts2tt( riskNeutral );
 % The term premium: this is calculated as the difference between the 
 % risk-neutral yield and the model-implied fitted yield.
-termPremium = onesNumTimes * (A - AP) + X * (B - BP);
+termPremium = onesNumTimes * (AP - AQ) + X * (BP - BQ);
 decomposition.TermPremium = ts2tt( termPremium );
 % The convexity: this is calculated as the difference between the 
 % convexity-neutral yield and the model-implied fitted yield.
-convexity = onesNumTimes * (A - AQ) + X * (B - BQ);
+convexity = onesNumTimes * (AP - AR) + X * (BP - BR);
 decomposition.Convexity = ts2tt( convexity );
 
 end % fitACM
