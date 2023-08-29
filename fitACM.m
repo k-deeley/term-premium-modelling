@@ -1,4 +1,4 @@
-function decomposition = fitACM( yields, shortTermInterestRate, maturities )
+function decomposition = fitACM( yields, shortTermInterestRate, maturities, excessReturnMaturities, numBootstrapSamples)
 %FITACM Fit the ACM term premium model for the given yields.
 %
 % Inputs:
@@ -20,15 +20,23 @@ arguments
     yields(:, :) timetable
     shortTermInterestRate(:, 1) timetable
     maturities(1, :) double {mustBePositive, mustBeInteger}    
+    excessReturnMaturities(1, :) double {mustBePositive, mustBeInteger}
+    numBootstrapSamples(1,:) double {mustBeInteger}
 end % arguments
 
 %% Prepare and validate the input data.
+% Divide rt by 100.
 [yieldDates, y, rt, maturities] = ...
     prepareInputData( yields, shortTermInterestRate, maturities );
 
+factorMaturities = 6:120;
+
 % Write down the dimensions of the yield matrix.
 % We use the notation from [1].
-[T, N] = size( y );
+[T, ~] = size( y );
+Nall = numel(maturities); % Keep this as all maturities
+Nexr = numel(excessReturnMaturities);
+M = numel(factorMaturities);
 % * T is the number of observations/data points in each yield curve, which 
 % is equal to the number of rows of the yield matrix.
 % * N is the number of maturities, which is equal to the number of columns
@@ -45,12 +53,12 @@ yieldMeans = mean( y );
 zeroMeanYields = y - yieldMeans;
 % Next, compute the principal components, turning off the default 
 % auto-centering behavior via the "Centered" option.
-[~, factors] = pca( zeroMeanYields, "Centered", false );
+[~, factors] = pca( zeroMeanYields(:,factorMaturities), "Centered", false );
 % Extract the required number of factors. 
 % * K is the number of principal components used in the model.
 % * X is a T-by-K matrix containing the first K principal components of the
 % yield matrix.
-K = 5;
+K = 4;
 X = factors(:, 1:K);
 % The first three principal component factors are interpreted as follows.
 %
@@ -59,22 +67,26 @@ X = factors(:, 1:K);
 % * Curvature
 
 %% Estimate equation (1) from [1] with a vector-autoregressive model.
-
-% Create and estimate a VAR(1) model for the factors.
-numLags = 1;
-VARModel = varm( K, numLags );
-% Calibrate mu = 0 (the constant terms in the VAR model).
-mu = zeros( K, 1 );
-VARModel.Constant = mu;
-% Estimate the model and return the innovations matrix V.
-[VARModel, ~, ~, V] = estimate( VARModel, X );
-% * V is a (N-1)-by-K matrix of innovations.
-% Extract the autoregressive coefficients Phi.
-Phi = VARModel.AR{1};
-% * Phi is the K-by-K matrix of VAR model coefficients.
-% Extract the covariance matrix Sigma.
-% * Sigma is the K-by-K variance-covariance matrix of the model parameters.
-Sigma = VARModel.Covariance;
+if numBootstrapSamples <= 0
+    [mu,Phi,Sigma,V] = PDynamics(X, K, "default");
+else
+    [mu,Phi,Sigma,V] = PDynamics(X, K, "bootstrap", numBootstrapSamples);
+end
+% % Create and estimate a VAR(1) model for the factors.
+% numLags = 1;
+% VARModel = varm( K, numLags );
+% % Calibrate mu = 0 (the constant terms in the VAR model).
+% mu = zeros( K, 1 );
+% VARModel.Constant = mu;
+% % Estimate the model and return the innovations matrix V.
+% [VARModel, ~, ~, V] = estimate( VARModel, X );
+% % * V is a (T-1)-by-K matrix of innovations.
+% % Extract the autoregressive coefficients Phi.
+% Phi = VARModel.AR{1};
+% % * Phi is the K-by-K matrix of VAR model coefficients.
+% % Extract the covariance matrix Sigma.
+% % * Sigma is the K-by-K variance-covariance matrix of the model parameters.
+% Sigma = VARModel.Covariance;
 
 %% Fit the excess returns using equation (14) from [1].
 % Equation (14) from [1] regresses the excess returns (rx) on a constant,
@@ -100,7 +112,7 @@ Sigma = VARModel.Covariance;
 % maturities, and by 100 to convert from percentages to proportions.
 conversionFactor = 12 * 100;
 lnP = (-1) * maturities .* y / conversionFactor;
-% * lnP is a T-by-N matrix of log prices.
+% * lnP is a T-by-Nall matrix of log prices.
 
 % Next, compute the excess returns using equation (6) of [1].
 % Here, the rows represent continuous time (e.g., monthly observations) 
@@ -108,9 +120,17 @@ lnP = (-1) * maturities .* y / conversionFactor;
 % Translating equation (6) of [1] to our matrix lnP:
 % * t represents the row index and continuous time.
 % * n represents the column index and the discrete bond maturity period.
-rx = zeros( T, N );
-rx(2:end, 2:end) = lnP(2:end, 1:end-1) - lnP(1:end-1, 2:end) - rt(1:end-1);
-% * rx is a T-by-N matrix of excess returns.
+
+% Compute excess returns from 12 months onwards (exclude first two entries)
+% First row and final column all zeros because we're computing the
+% difference
+rx = zeros( T, Nall ); 
+rx(2:end, 1:end-1) = lnP(2:end, 1:end-1) - lnP(1:end-1, 2:end) - rt(1:end-1);
+% * rx is a T-by-Nall matrix of excess returns.
+
+% Subselect so we only use the excessReturnMaturities specified, i.e. every
+% six months
+rx = rx(:, excessReturnMaturities-1);
 
 % Implement the linear regression expressed in equation (14) of [1].
 % Write down the design matrix Z of size T-by-(2*K+1). We need to pad the
@@ -118,19 +138,20 @@ rx(2:end, 2:end) = lnP(2:end, 1:end-1) - lnP(1:end-1, 2:end) - rt(1:end-1);
 % the lagged pricing factors (X(1:end-1, :)) with zeros in the first row to
 % match the required matrix dimensions.
 Z = [ones( T, 1 ), [zeros( 1, K ); V], [zeros(1, K); X(1:end-1, :)]];
-allCoeffs = Z \ rx; % (2*K+1)-by-N
-a = allCoeffs(1, :).'; % N-by-1
-beta = allCoeffs(2:K+1, :).'; % N-by-K
-c = allCoeffs(K+2:end, :).'; % N-by-K
+allCoeffs = Z \ rx; % (2*K+1)-by-Nexr
+a = allCoeffs(1, :).'; % Nexr-by-1
+beta = allCoeffs(2:K+1, :).'; % Nexr-by-K
+c = allCoeffs(K+2:end, :).'; % Nexr-by-K
 % Compute the residuals E (a T-by-N matrix).
 E = rx - Z * allCoeffs;
 % Estimate sigma^2 (a scalar value).
-sigma2 = trace( E * E.' ) / (N * T);
+sigma2 = trace( E * E.' ) / (Nexr * T);
+assert (Nexr == width(allCoeffs))
 
 %% Estimate the price of risk parameters via cross-sectional regression.
 % Construct the B* matrix (defined below equation (13) in [1]).
-Bstar = zeros( N, K^2 );
-for n = 1 : N % For each maturity...
+Bstar = zeros( Nexr, K^2 );
+for n = 1 : Nexr % For each maturity...
     betan = beta(n, :); % 1-by-K
     betanOuterProduct = betan.' * betan; % K-by-K
     % Flatten the outer product into a 1-by-K^2 row vector.
@@ -175,14 +196,14 @@ qx = Phi - lambda1; % A K-by-K matrix.
 % to 0 by imposing Sigma = 0 and sigma2 = 0. The convexity is calculated as
 % the difference between the convexity-neutral yield and the model-implied
 % fitted yield.
-AP = NaN( 1, N );
-BP = NaN( K, N );
-AQ = NaN( 1, N );
-BQ = NaN( K, N );
-AR = NaN( 1, N );
-BR = NaN( K, N );
+AP = NaN( 1, Nall );
+BP = NaN( K, Nall );
+AQ = NaN( 1, Nall );
+BQ = NaN( K, Nall );
+AR = NaN( 1, Nall );
+BR = NaN( K, Nall );
 
-for n = 1 : N % For each bond maturity period...
+for n = 1 : Nall % For each bond maturity period...
     if n == 1
         % Initialize.
         AP(1, n) = -delta0;
