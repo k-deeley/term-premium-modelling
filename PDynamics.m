@@ -1,15 +1,26 @@
-function [mu,Phi,Sigma,V] = PDynamics(X, K, method, numBootstrapSamples)
-% method either "boostrap" or "default"
+function [mu,Phi,Sigma,V] = PDynamics(X, method, numBootstrapSamples)
+%PDynamics: Compute VAR step on factors, optionally using bootstrap
+%
+% Inputs:
+% * X - a T-by-K matrix containing the first K principal components of the
+% yield matrix. 
+% * method - the method for computing the p dynamics. This should be either
+% "default" or "bootstrap". If unspecified, "default" will be used.
+% * numBootstrapSamples - a positive integer, specifying the number of bootstrap
+% samples to use if bootstrapping the VAR model. Defaults to 100.
+%
 
-if nargin == 3
-    numBootstrapSamples = 10;
-end
+arguments
+    X (:, :) double
+    method (1,1) string {mustBeMember(method,{'default','bootstrap'})} = "default"
+    numBootstrapSamples(1,:) double {mustBeInteger, mustBePositive} = 100;
+end % arguments
 
+% Compute the number of factors
+K = width(X);
 % Create and estimate a VAR(1) model for the factors.
 numLags = 1;
-
 VARModel = varm( K, numLags );
-%TODO: Check K matches size of X
 
 % Calibrate mu = 0 (the constant terms in the VAR model).
 mu = zeros( K, 1 );
@@ -55,6 +66,7 @@ if method == "bootstrap"
         PhiMC = VARModelMC.AR{1};
         phiBootstrap(s, :) = PhiMC(:);
     end
+
     % Compute the average Phi over all bootstrap samples
     PhiBar = mean(phiBootstrap); 
     PhiBar = reshape(PhiBar, size(Phi));
@@ -70,6 +82,7 @@ if method == "bootstrap"
         scaling = scaling*0.999;
         PhiBC = Phi - scaling*bias;
     end
+    
     % Compute V with the new, bias-corrected Phi
     % We essentially want to compute LHS - Phi X_t to get V
     % i.e. X_t+1 - Phi * X_t 

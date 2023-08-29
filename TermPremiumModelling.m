@@ -33,16 +33,15 @@ year2month = 12;
 selectedMaturities = [24, 60, 120];
 selectedYears = selectedMaturities / year2month;
 
-selectedIdx = selectedMaturities / 6;
-
+figure
+tiledlayout(2, length(selectedMaturities))
 for k = 1 : length( selectedMaturities )
-    figure
     nexttile
     plot( dates, yieldMatrix(:, selectedMaturities(k)), "k" )
     hold on
-    plot( dates, decomposition.Fitted{:, selectedIdx(k)}, "r" )
-    plot( dates, decomposition.RiskNeutralExpected{:, selectedIdx(k)}, "b" )
-    plot( dates, decomposition.TermPremium{:, selectedIdx(k)}, "g" )
+    plot( dates, decomposition.Fitted{:, selectedMaturities(k)}, "r" )
+    plot( dates, decomposition.RiskNeutralExpected{:, selectedMaturities(k)}, "b" )
+    plot( dates, decomposition.TermPremium{:, selectedMaturities(k)}, "g" )
     legend( "Actual", "Fitted", "Expected", "Premium" )
     ylabel( "(%)" )
     title( selectedYears(k) + "-year Decomposition (GSW Data)" )
@@ -61,11 +60,6 @@ yieldsNew = readmatrix( filename, "Range", "B2:DQ371" );
 varNames = "Maturity_" + maturities + "_months";
 yieldsNew = array2timetable( yieldsNew, "RowTimes", datesNew, ...
     "VariableNames", varNames );
-
-% Select data from January 1996 onwards to avoid missing values.
-% from1998Idx = yieldsNew.Time >= datetime( 1996, 1, 1 );
-%yieldsNew = yieldsNew(from1998Idx, :);
-% bankRates = yieldsNew(:,1);
 
 % Interpolate the remaining short-term rates.
 % Interpolate top-down, using adjacent maturities
@@ -88,43 +82,32 @@ ax.ColorOrder = jet( numMaturities );
 % Extract the short-term interest rate.
 stir = yieldsNew(:, 1);
 stir{:,1} = stir{:,1}/12;
-% Maturities are alreay in months; no need to convert
-% maturities = maturities(12:end);
-
-% Regimes: 
-% start - 30/11/2008; 30/11/2008 - 31/12/2021; 31/12/2021 - end
-regimeBounds = [yieldsNew.Time(1), datetime(2008, 11, 30), datetime(2021, 12, 31), yieldsNew.Time(end)];
 
 %% Visualize the results.
 selectedMaturities = [24, 60, 120];
 selectedYears = selectedMaturities / year2month;
-selectedIdx = selectedMaturities / 6;
+factorMaturities = 6 : maxMaturity;
 
-for r = 1:numel(regimeBounds)-1
-	regimeIdx = timerange(regimeBounds(r), regimeBounds(r+1), "intervalType", "open");
-    regimeYields = yieldsNew(regimeIdx,:);
-    regimeStir = stir(regimeIdx,:);
-    % Fit the model to regime
-    decomposition = fitACM( regimeYields, regimeStir, maturities, excessReturnMaturities);
+% Fit the model to regime
+decomposition = fitACM( regimeYields, regimeStir, maturities, excessReturnMaturities, factorMaturities);
 
-    for k = 1 : length( selectedYears )
-
-        figure
-		% yieldsNew is indexed for all n. So we should use indices like 24, 60, 120.
-        plot( yieldsNew.Time, yieldsNew{:, selectedMaturities(k)}, "k", ...
-            "DisplayName", "Observed Yield" )
-        hold on
-        plot( decomposition.Fitted.Time, ...
-            decomposition.Fitted{:, selectedIdx(k)}, "r", ...
-            "DisplayName", "Fitted Yield" )
-        plot( decomposition.RiskNeutralExpected.Time, ...
-            decomposition.RiskNeutralExpected{:, selectedIdx(k)}, "b", ...
-            "DisplayName", "Expectation component" )
-        plot( decomposition.TermPremium.Time, ...
-            decomposition.TermPremium{:, selectedIdx(k)}, "g", ...
-            "DisplayName", "Term Premium" )
-        legend
-        grid on
-        title( selectedYears(k) + "-year Maturity Decomposition (BoE Data)" )
-    end % for
+for k = 1 : length( selectedYears )
+    figure
+    nexttile
+    % yieldsNew is indexed for all n. So we should use indices like 24, 60, 120.
+    plot( yieldsNew.Time, yieldsNew{:, selectedMaturities(k)}, "k", ...
+        "DisplayName", "Observed Yield" )
+    hold on
+    plot( decomposition.Fitted.Time, ...
+        decomposition.Fitted{:, selectedMaturities(k)}, "r", ...
+        "DisplayName", "Fitted Yield" )
+    plot( decomposition.RiskNeutralExpected.Time, ...
+        decomposition.RiskNeutralExpected{:, selectedMaturities(k)}, "b", ...
+        "DisplayName", "Expectation component" )
+    plot( decomposition.TermPremium.Time, ...
+        decomposition.TermPremium{:, selectedMaturities(k)}, "g", ...
+        "DisplayName", "Term Premium" )
+    legend
+    grid on
+    title( selectedYears(k) + "-year Maturity Decomposition (BoE Data)" )
 end % for
