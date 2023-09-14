@@ -17,24 +17,25 @@ dates = dates(dates >= startDate);
 
 % Convert the yields to a timetable.
 yields = array2timetable( yieldMatrix, "RowTimes", dates );
-stir = array2timetable( yields{:, 1} / 12, "RowTimes", yields.Time );
+stir = array2timetable( yields{:, 1}, "RowTimes", yields.Time );
 
 % Interpolate missing values.
 yields = fillmissing( yields, "nearest" );
 
 % Fit the model to obtain the decomposition.
 maxMaturity = 120; % Maximum maturity (in months)
-allMaturities = 1 : maxMaturity; % Vector of all maturities
+maturities = 1 : maxMaturity; % Vector of all maturities
 excessReturnMaturities = 6 : 6 : maxMaturity;
-decomposition = fitACM( yields, stir, allMaturities, excessReturnMaturities);
+decomposition = fitACM( yields, stir, maturities, "excessReturnMaturities", excessReturnMaturities);
 
-% %% Visualize the model results.
+% %% Visualize the model results for selected maturities
 year2month = 12;
 selectedMaturities = [24, 60, 120];
 selectedYears = selectedMaturities / year2month;
 
-figure
-tiledlayout(2, length(selectedMaturities))
+f = figure;
+f.Position(3:4) = [1200,350];
+tiledlayout(1, length(selectedMaturities))
 for k = 1 : length( selectedMaturities )
     nexttile
     plot( dates, yieldMatrix(:, selectedMaturities(k)), "k" )
@@ -49,7 +50,7 @@ for k = 1 : length( selectedMaturities )
 end
 
 %% Move to the BoE data - start by importing the zero coupon yields.
-filename = "ZeroCouponYieldsMonthly_1992_2023.xlsx";
+filename = "ZeroCouponYieldsMonthly_Dummy.xlsx"; %ZeroCouponYieldsMonthly_1992_2023
 
 % Select maturities up to 10 years.
 maturities = readmatrix( filename, "Range", "B1:DQ1" );
@@ -71,43 +72,61 @@ ax = axes;
 plot( ax, yieldsNew.Properties.RowTimes, yieldsNew{:,6:end} )
 xlabel( ax, "Date" )
 ylabel( ax, "Yield (%)" )
-title( ax, "Zero-Coupon UK Yields (%)" )
+title( ax, "Zero-Coupon Yields (%)" )
 grid( ax, "on" )
-leg = legend( ax, string( maturities ), "NumColumns", 2 );
-leg.Title.String = "Maturity (years)";
 numMaturities = length( maturities );
 ax.ColorOrder = jet( numMaturities );
 
 %% Fit the ACM model.
 % Extract the short-term interest rate.
 stir = yieldsNew(:, 1);
-stir{:,1} = stir{:,1}/12;
+stir{:,1} = stir{:,1};
 
-%% Visualize the results.
 selectedMaturities = [24, 60, 120];
 selectedYears = selectedMaturities / year2month;
-factorMaturities = 6 : maxMaturity;
 
-% Fit the model to regime
-decomposition = fitACM( regimeYields, regimeStir, maturities, excessReturnMaturities, factorMaturities);
-
+decomposition = fitACM( yieldsNew, stir, maturities, "excessReturnMaturities", excessReturnMaturities);
+colors = {[139 0 0]/255, [0 128 0]/255, 'b'};
+%% Visualize the results.
 for k = 1 : length( selectedYears )
     figure
-    nexttile
-    % yieldsNew is indexed for all n. So we should use indices like 24, 60, 120.
     plot( yieldsNew.Time, yieldsNew{:, selectedMaturities(k)}, "k", ...
         "DisplayName", "Observed Yield" )
     hold on
     plot( decomposition.Fitted.Time, ...
-        decomposition.Fitted{:, selectedMaturities(k)}, "r", ...
+        decomposition.Fitted{:, selectedMaturities(k)}, ...
+        "Color", [139 0 0]/255, ...
         "DisplayName", "Fitted Yield" )
     plot( decomposition.RiskNeutralExpected.Time, ...
-        decomposition.RiskNeutralExpected{:, selectedMaturities(k)}, "b", ...
-        "DisplayName", "Expectation component" )
+        decomposition.RiskNeutralExpected{:, selectedMaturities(k)}, ...
+        "Color", [0 128 0]/255, ...
+        "DisplayName", "Risk Neutral Yield (Expected)" )
     plot( decomposition.TermPremium.Time, ...
-        decomposition.TermPremium{:, selectedMaturities(k)}, "g", ...
+        decomposition.TermPremium{:, selectedMaturities(k)}, "b", ...
         "DisplayName", "Term Premium" )
     legend
     grid on
-    title( selectedYears(k) + "-year Maturity Decomposition (BoE Data)" )
+    title( selectedYears(k) + "-year Maturity Decomposition " )
 end % for
+
+%% Visualize Term Premium for all selectedMaturities
+figure
+for k = 1 : length( selectedYears )
+    p = plot(decomposition.TermPremium.Time, ...
+            decomposition.TermPremium{:, selectedMaturities(k)}, "Color", colors{k}, ...
+            "DisplayName", selectedYears(k) +"-year" );
+    hold on;
+end % for
+legend
+grid on
+title( "Term premium for selected maturities " )
+hold off;
+
+%% Compute the RMSE between the fitted and the observed yields.
+RMSE = 100 * sqrt(mean((decomposition.Fitted.Variables - yieldsNew.Variables).^2));
+
+RMSE = array2table(RMSE, "VariableNames", yieldsNew.Properties.VariableNames, ...
+    "RowNames", "RMSE");
+
+selectedRMSE = RMSE(:, [24, 60, 120]);
+

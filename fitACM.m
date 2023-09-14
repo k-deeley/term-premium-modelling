@@ -1,4 +1,4 @@
-function decomposition = fitACM( yields, shortTermInterestRate, maturities, excessReturnMaturities, factorMaturities, numBootstrapSamples)
+function decomposition = fitACM( yields, shortTermInterestRate, maturities, nameValArgs)
 %FITACM Fit the ACM term premium model for the given yields.
 %
 % Inputs:
@@ -6,18 +6,18 @@ function decomposition = fitACM( yields, shortTermInterestRate, maturities, exce
 % * shortTermInterestRate - a timetable containing the short-term interest
 %   rate.
 % * maturities - a numeric vector of bond maturities, expressed in months.
-% This should be on a month-by-month basis for best results.
+%   This should be on a month-by-month basis for best results.
 % * excessReturnMaturities - a numeric vector of bond maturities, expressed
-% in months. The maturities for which excess returns are computed may be
-% different to the maturities available for the provided yield data. Eg.
-% excess returns may be computed every 6 months instead of monthly.
-% * excessReturnMaturities - a numeric vector of bond maturities, expressed
-% in months. The maturities used to compute the PCA factors. This may be
-% exclude some maturities from the yield data, eg. the first six months may
-% be excluded.
+%   in months. The maturities for which excess returns are computed may be
+%   different to the maturities available for the provided yield data. Eg.
+%   excess returns may be computed every 6 months instead of monthly.
+% * factorMaturities - a numeric vector of bond maturities, expressed
+%   in months. The maturities used to compute the PCA factors. This may be
+%   exclude some maturities from the yield data, eg. the first six months may
+%   be excluded.
 % * numBootstrapSamples - an integer, specifying the number of bootstrap
-% samples to use if bootstrapping the VAR model. If this is <= 0, then no
-% bootstrapping is performed.
+%   samples to use if bootstrapping the VAR model. If this is <= 0, then no
+%   bootstrapping is performed.
 %
 % References:
 %
@@ -32,11 +32,15 @@ arguments
     yields(:, :) timetable
     shortTermInterestRate(:, 1) timetable
     maturities(1, :) double {mustBePositive, mustBeInteger}    
-    excessReturnMaturities(1, :) double {mustBePositive, mustBeInteger} = maturities;
-    factorMaturities(1, :) double {mustBePositive, mustBeInteger} = maturities;
-    numBootstrapSamples(1,:) double {mustBeInteger} = -1
+    nameValArgs.ExcessReturnMaturities(1, :) double {mustBePositive, mustBeInteger} = maturities;
+    nameValArgs.FactorMaturities(1, :) double {mustBePositive, mustBeInteger} = maturities;
+    nameValArgs.NumBootstrapSamples(1,:) double {mustBeInteger} = -1
+    nameValArgs.BootstrapSampleDistribution (1,1) string = 'saved';
 end % arguments
-    
+
+    excessReturnMaturities = nameValArgs.ExcessReturnMaturities;
+    factorMaturities = nameValArgs.FactorMaturities;
+
     %% Prepare and validate the input data.
     % Divide rt by 100.
     [yieldDates, y, rt, maturities] = ...
@@ -49,7 +53,7 @@ end % arguments
     % and N for the number of excess return maturities (may be every 6 months)
     Nall = numel(maturities); % Keep this as all maturities
     Nexr = numel(excessReturnMaturities);
-    M = numel(factorMaturities);
+
     % * T is the number of observations/data points in each yield curve, which 
     % is equal to the number of rows of the yield matrix.
     % * N is the number of maturities, which is equal to the number of columns
@@ -80,12 +84,12 @@ end % arguments
     % * Curvature
     
     %% Estimate equation (1) from [1] with a vector-autoregressive model.
-    if numBootstrapSamples <= 0
+    if nameValArgs.NumBootstrapSamples <= 0
         [mu,Phi,Sigma,V] = PDynamics(X);
     else
-        [mu,Phi,Sigma,V] = PDynamics(X, "bootstrap", numBootstrapSamples);
+        [mu,Phi,Sigma,V] = PDynamics(X, "bootstrap", "NumBootstrapSamples", nameValArgs.NumBootstrapSamples, "BootstrapSampleDistribution", nameValArgs.BootstrapSampleDistribution);
     end
-    
+
     %% Fit the excess returns using equation (14) from [1].
     % Equation (14) from [1] regresses the excess returns (rx) on a constant,
     % the lagged pricing factors (X), and the contemporaneous pricing factor
@@ -300,7 +304,9 @@ function [yieldDates, yieldMatrix, shortTermInterestRate, maturities] = ...
     % Convert the short term interest rates from percentage yields to
     % proportions.
     pc2prop = 1/100;
-    shortTermInterestRate = shortTermInterestRate * pc2prop;
+    % Convert the short term interest rate from annual to monthly
+    year2month = 1/12;
+    shortTermInterestRate = shortTermInterestRate * pc2prop * year2month;
     
     % Validate the maturities.
     assert( isequal( length( maturities ), width( yieldMatrix ) ), ...
