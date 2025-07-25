@@ -22,7 +22,7 @@ function decomposition = fitACM( yields, shortTermInterestRate, ...
 %
 %  Name-Value Arguments
 %
-% * NumComponents: a positive integer representing the number of principal 
+% * NumComponents: a positive integer representing the number of principal
 %   components used in the model. The default value is 4.
 %
 % * ExcessReturnMaturities: a numeric vector of bond maturities, expressed
@@ -99,7 +99,7 @@ arguments ( Input )
 end % arguments ( Input )
 
 arguments ( Output )
-    decomposition
+    decomposition(1, 1) struct
 end % arguments ( Output )
 
 % Extract the excess return and factor maturities.
@@ -351,9 +351,6 @@ AR = price2yield( AR );
 BR = price2yield( BR );
 
 % Prepare the outputs.
-% Define a helper function to convert from a matrix to a timetable.
-ts2tt = @( ts ) array2timetable( ts, "RowTimes", yieldDates, ...
-    "VariableNames", string( maturities ) );
 
 % Evaluate the market price of risk (equation (5) of [1]).
 sqrtSigma = sqrtm( Sigma );
@@ -362,25 +359,27 @@ lambda_t = lambda_t.';
 decomposition.MarketPriceOfRisk = array2timetable( lambda_t, ...
     "RowTimes", yieldDates, ...
     "VariableNames", "PC" + (1:K) );
+decomposition.MarketPriceOfRisk.Properties.DimensionNames(1) = "Date";
 
 % The fitted yields (equation (21) of [1]).
 onesNumTimes = ones( T, 1 );
 fitted = onesNumTimes * AP + X * BP; % A T-by-N matrix.
-decomposition.FittedYields = ts2tt( fitted );
+decomposition.FittedYields = ts2tt( fitted, yieldDates, maturities );
 
 % The (risk-neutral) expected values.
 riskNeutral = onesNumTimes * AQ + X * BQ; % A T-by-N matrix.
-decomposition.RiskNeutralExpectedValues = ts2tt( riskNeutral );
+decomposition.RiskNeutralExpectedValues = ...
+    ts2tt( riskNeutral, yieldDates, maturities );
 
 % The term premium: this is calculated as the difference between the
 % risk-neutral yield and the model-implied fitted yield.
 termPremium = onesNumTimes * (AP - AQ) + X * (BP - BQ);
-decomposition.TermPremium = ts2tt( termPremium );
+decomposition.TermPremium = ts2tt( termPremium, yieldDates, maturities );
 
 % The convexity: this is calculated as the difference between the
 % convexity-neutral yield and the model-implied fitted yield.
 convexity = onesNumTimes * (AP - AR) + X * (BP - BR);
-decomposition.Convexity = ts2tt( convexity );
+decomposition.Convexity = ts2tt( convexity, yieldDates, maturities );
 
 end % fitACM
 
@@ -448,3 +447,19 @@ assert( factorMaturities(end) <= maturities(end), ...
     "exceed the final maturity."  )
 
 end % prepareInputData
+
+function tt = ts2tt( ts, dates, headers )
+%TS2TT Convert an array ts to a timetable tt with the given dates as the
+%row times and the given headers as the variable names.
+
+arguments ( Input )
+    ts(:, :) double {mustBeReal, mustBeFinite}
+    dates(:, 1) datetime
+    headers(1, :) string
+end % arguments ( Input )
+
+tt = array2timetable( ts, "RowTimes", dates, ...
+    "VariableNames", headers );
+tt.Properties.DimensionNames(1) = "Date";
+
+end % ts2tt
