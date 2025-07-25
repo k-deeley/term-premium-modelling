@@ -1,7 +1,7 @@
 
 <a id="T_0428AC80"></a>
 
-# **Term\-Premium Modelling using the ACM Model**
+# <span style="color:rgb(213,80,0)">**Term\-Premium Modelling using the ACM Model**</span>
 
 After a long regime of near\-zero base interest rates, the return of base interest rates in developed economies to more realistic historical levels has inspired a greater interest in term\-premium modelling methodologies.
 
@@ -25,23 +25,14 @@ For further references and background information, please see the [References](#
 
 ## Table of Contents
 &emsp;[Download the data used in the ACM 2013 paper.](#H_03976C9A)
- 
 &emsp;[Import the ACM 2013 data as a timetable.](#H_91F85D56)
- 
 &emsp;[Extract the Svensson model parameters and dates matching the range used in ACM 2013.](#H_99F7507D)
- 
 &emsp;[Construct a collection of yield curves using the Svensson model.](#H_7BC32953)
- 
 &emsp;[Visualize the yield curves.](#H_7F5FCC80)
- 
 &emsp;[Specify the model options.](#H_15195F2B)
- 
 &emsp;[Fit the model.](#H_F8A071D0)
- 
 &emsp;[Plot the 2\-year and 10\-year decompositions.](#H_E4C85F1B)
- 
 &emsp;[References](#H_B95A1FA7)
- 
 &emsp;[Local functions.](#H_B51BE7A8)
  
 <!-- End Toc -->
@@ -140,14 +131,14 @@ annualMaturities = monthlyMaturities / 12;
 Compute yields using the Svensson model:
 
 
- $y=\beta_0 +\beta_1 \left(1-\exp \left(-\frac{m}{\tau_1 }\right)\right)\frac{\tau_1 }{m}+\beta_2 \left(\left(1-\exp \left(-\frac{m}{\tau_1 }\right)\frac{\tau_1 }{m}-\exp \left(-\frac{m}{\tau_1 }\right)\right)+\beta_3 \left(\left(1-\exp \left(-\frac{m}{\tau_2 }\right)\frac{\tau_2 }{m}-\exp \left(-\frac{m}{\tau_2 }\right)\right)\right.\right.$,
+  <img src="https://latex.codecogs.com/svg.latex?\inline&space;&space;y=\beta_0&space;+\beta_1&space;\left(1-\exp&space;\left(-\frac{m}{\tau_1&space;}\right)\right)\frac{\tau_1&space;}{m}+\beta_2&space;\left(\left(1-\exp&space;\left(-\frac{m}{\tau_1&space;}\right)\frac{\tau_1&space;}{m}-\exp&space;\left(-\frac{m}{\tau_1&space;}\right)\right)+\beta_3&space;\left(\left(1-\exp&space;\left(-\frac{m}{\tau_2&space;}\right)\frac{\tau_2&space;}{m}-\exp&space;\left(-\frac{m}{\tau_2&space;}\right)\right)\right.\right.&space;">  ,
 
 
 where:
 
--  $y$ is the zero\-coupon bond yield (%), 
--  $\lbrace \beta_k \rbrace_{k=0}^3$ and $\tau_1$, $\tau_2$ are the parameters of the Svensson model, 
--  $m$ is the maturity in years. 
+-    <img src="https://latex.codecogs.com/svg.latex?\inline&space;&space;y&space;">   is the zero\-coupon bond yield (%), 
+-    <img src="https://latex.codecogs.com/svg.latex?\inline&space;&space;\lbrace&space;\beta_k&space;\rbrace_{k=0}^3&space;">   and   <img src="https://latex.codecogs.com/svg.latex?\inline&space;&space;\tau_1&space;">  ,   <img src="https://latex.codecogs.com/svg.latex?\inline&space;&space;\tau_2&space;">   are the parameters of the Svensson model, 
+-    <img src="https://latex.codecogs.com/svg.latex?\inline&space;&space;m&space;">   is the maturity in years. 
 ```matlab
 f1 = Tau1 ./ annualMaturities;
 f2 = 1 - exp( (-1) ./ f1 );
@@ -195,7 +186,8 @@ c = colorbar( ax );
 ylabel( c, "Bond Maturity (months)" )
 ```
 
-![figure_0.png](./TermPremiumModelling_media/figure_0.png)
+<center><img src="TermPremiumModelling_media/figure_0.png" width="562" alt="figure_0.png"></center>
+
 <a id="H_15195F2B"></a>
 
 # Specify the model options.
@@ -237,7 +229,8 @@ decomposition = fitACM( yields, stir, maturities, ...
 ```
 <a id="H_E4C85F1B"></a>
 <a id="T_0428AC80"></a>
-![figure_1.png](./TermPremiumModelling_media/figure_1.png)
+<center><img src="TermPremiumModelling_media/figure_1.png" width="562" alt="figure_1.png"></center>
+
 
 ```matlab
 figure
@@ -245,7 +238,8 @@ ax = axes();
 plotDecomposition( ax, yields, decomposition, 120 )
 ```
 
-![figure_2.png](./TermPremiumModelling_media/figure_2.png)
+<center><img src="TermPremiumModelling_media/figure_2.png" width="562" alt="figure_2.png"></center>
+
 <a id="H_B95A1FA7"></a>
 
 # References
