@@ -16,6 +16,9 @@ This script demonstrates how to fit the Adrian\-Crump\-Moench (ACM) term\-premiu
 
 -  [Pricing the Term Structure with Linear Regressions](https://www.newyorkfed.org/medialibrary/media/research/staff_reports/sr340.pdf), Tobias Adrian, Richard K. Crump, and Emanuel Moench, Federal Reserve Bank of New York Staff Reports, no. 340, August 2008; revised April 2013, JEL classification: G10, G12. 
 
+The yield curve data used in this example comes from the [Federal Reserve Economic Research Data](https://www.federalreserve.gov/econres.htm) portal ([file link](https://www.federalreserve.gov/econresdata/researchdata/feds200628.xls)), and was last accessed in July 2025.
+
+
 For further references and background information, please see the [References](#H_B95A1FA7) section below.
 
 <!-- Begin Toc -->
@@ -116,7 +119,7 @@ disp( head( svenData ) )
 
 # Construct a collection of yield curves using the Svensson model.
 
-Extract the Svensson parameters.
+Extract the Svensson model parameters.
 
 ```matlab
 Beta0 = svenData.BETA0;
@@ -134,19 +137,28 @@ monthlyMaturities = 1:120;
 annualMaturities = monthlyMaturities / 12;
 ```
 
-Compute yields using the Svensson model.
+Compute yields using the Svensson model:
+
+
+ $y=\beta_0 +\beta_1 \left(1-\exp \left(-\frac{m}{\tau_1 }\right)\right)\frac{\tau_1 }{m}+\beta_2 \left(\left(1-\exp \left(-\frac{m}{\tau_1 }\right)\frac{\tau_1 }{m}-\exp \left(-\frac{m}{\tau_1 }\right)\right)+\beta_3 \left(\left(1-\exp \left(-\frac{m}{\tau_2 }\right)\frac{\tau_2 }{m}-\exp \left(-\frac{m}{\tau_2 }\right)\right)\right.\right.$,
+
+
+where:
+
+-  $y$ is the zero\-coupon bond yield (%), 
+-  $\lbrace \beta_k \rbrace_{k=0}^3$ and $\tau_1$, $\tau_2$ are the parameters of the Svensson model, 
+-  $m$ is the maturity in years. 
+```matlab
+f1 = Tau1 ./ annualMaturities;
+f2 = 1 - exp( (-1) ./ f1 );
+f3 = Tau2 ./ annualMaturities;
+f4 = 1 - exp( (-1) ./ f3 );
+yields = Beta0 + Beta1 .* f1 .* f2 + Beta2 .* (f1 .* f2 + f2 - 1) + Beta3 .* (f3 .* f4 + f4 - 1);
+```
+
+Store the yields in a timetable.
 
 ```matlab
-numObs = height( svenData );
-yields = zeros( numObs, numel( annualMaturities ) ); % VECTORISE
-for t = 1 : numObs
-    s = Beta0(t) + ...
-    Beta1(t) * (1 - exp( -annualMaturities / Tau1(t) )) .* (Tau1(t) ./ annualMaturities) + ...
-    Beta2(t) * ((1 - exp( -annualMaturities / Tau1(t) )) .* Tau1(t) ./ annualMaturities - exp( -annualMaturities ./ Tau1(t) )) + ...
-    Beta3(t) * ((1 - exp( -annualMaturities / Tau2(t) )) .* (Tau2(t) ./ annualMaturities) - exp( -annualMaturities / Tau2(t) ));
-    yields(t, :) = s;
-end % for
-
 yields = array2timetable( yields, "RowTimes", svenData.Date, ...
     "VariableNames", string( monthlyMaturities ) );
 yields.Properties.DimensionNames(1) = svenData.Properties.DimensionNames(1);
